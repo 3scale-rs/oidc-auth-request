@@ -1,0 +1,77 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: httpbin-oidc-auth-request
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: envoy.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.jwt_authn
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.wasm
+        typedConfig:
+          '@type': type.googleapis.com/udpa.type.v1.TypedStruct
+          typeUrl: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+          value:
+            config:
+              configuration:
+                '@type': type.googleapis.com/google.protobuf.StringValue
+                value: |
+                  {
+                    "oidcs": [
+                      {
+                        "id": "keycloak",
+                        "upstream": {
+                          "name": "outbound|8080||keycloak.default.svc.cluster.local",
+                          "url": "http://keycloak.default.svc.cluster.local:8080",
+                          "timeout": 5000
+                        },
+                        "urls": {
+                          "login": "http://keycloak.default.svc.cluster.local:8080/auth/realms/wasmauth/protocol/openid-connect/auth",
+                          "token": "http://keycloak.default.svc.cluster.local:8080/auth/realms/wasmauth/protocol/openid-connect/token"
+                        },
+                        "clients": [
+                          {
+                            "id": "test",
+                            "secret": "PLACEHOLDER"
+                          }
+                        ]
+                      }
+                    ],
+                    "rules": [
+                      {
+                        "authorities": [
+                          "web",
+                          "web.app"
+                        ],
+                        "match": [
+                          {
+                            "prefix": "/oidc",
+                            "with": {
+                              "oidc": "keycloak",
+                              "client": "test"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+              name: oidc-auth-request
+              rootId: oidc-auth-request-root_id
+              vmConfig:
+                code:
+                  local:
+                    filename: /var/local/lib/wasme-cache/e1d69b422bac3f0fd0dcd5fa1032e975ff6874e7a1deafc40aeddd8dae957380
+                runtime: envoy.wasm.runtime.v8
+                vmId: oidc-auth-request
+  workloadSelector:
+    labels:
+      app: httpbin

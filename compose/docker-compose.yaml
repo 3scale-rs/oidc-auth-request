@@ -1,0 +1,65 @@
+version: "2.2"
+services:
+  ingress:
+    image: istio/proxyv2:1.8.3
+    entrypoint: /bin/bash -c 'sleep 1 && /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --bootstrap-version 3 --service-cluster $$(domainname) --service-node $$(hostname) --log-level debug'
+    volumes:
+      - ${ENVOY_DIR:-./envoy}:/etc/envoy/:z,rw
+      - ${WASM_FILTER:-./wasm/oidc_auth_request.wasm}:/etc/proxy-wasm/oidc_auth_request.wasm:z,rw
+    expose:
+      - "80"
+      - "443"
+      - "8080"
+      - "8001"
+    ports:
+      - "8080:80"
+      - "8443:443"
+      - "9080:8080"
+      - "9001:8001"
+    scale: 1
+    domainname: "ingress"
+    networks:
+      - ingress
+      - mesh
+  web:
+    image: quay.io/3scale/echoapi:stable
+    expose:
+      - "9292"
+    ports:
+      - "9292"
+    scale: 1
+    domainname: "app"
+    networks:
+      mesh:
+        aliases:
+          - app
+          - web.app
+
+  keycloak:
+    image: quay.io/keycloak/keycloak
+    logging:
+      driver: none
+    volumes:
+      - ${KEYCLOAK_DIR:-./keycloak}:/etc/keycloak/:z,ro
+    environment:
+      KEYCLOAK_USER: admin
+      KEYCLOAK_PASSWORD: admin
+      #KEYCLOAK_IMPORT: /etc/keycloak/import.json -Dkeycloak.profile.feature.upload_scripts=enabled
+      PROXY_ADDRESS_FORWARDING: "true"
+    expose:
+      - "8080"
+      - "8443"
+    ports:
+      - "18080:8080"
+      - "18443:8443"
+    domainname: "sso"
+    networks:
+      ingress:
+        aliases:
+          - sso
+          - keycloak.sso
+      mesh:
+
+networks:
+  ingress:
+  mesh:

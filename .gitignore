@@ -1,0 +1,4 @@
+/target
+/tarpaulin_report.html
+/.vscode/settings.json
+**.wasm

@@ -1,0 +1,8 @@
+schemaVersion: 1
+  
+name: oidc-auth-request
+description: Perform an OIDC Auth request
+version: 0.1.0
+phase: PreAuthN
+priority: 100
+module: oidc_auth_request.wasm

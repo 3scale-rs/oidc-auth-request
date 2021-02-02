@@ -1,0 +1,51 @@
+apiVersion: maistra.io/v1alpha1
+kind: ServiceMeshExtension
+metadata:
+  name: oidc-auth-request
+spec:
+  image: quay.io/3scale/oidc-auth-request
+  phase: PreAuthN
+  priority: 100
+  workloadSelector:
+    labels:
+      app: productpage
+  config: |
+    {
+      "oidcs": [
+        {
+          "id": "keycloak",
+          "upstream": {
+            "name": "outbound|8080||keycloak.default.svc.cluster.local",
+            "url": "http://keycloak",
+            "timeout": 5000
+          },
+          "urls": {
+            "login": "http://keycloak.default.svc.cluster.local:8080/auth/realms/wasmauth/protocol/openid-connect/auth",
+            "token": "http://keycloak.default.svc.cluster.local:8080/auth/realms/wasmauth/protocol/openid-connect/token"
+          },
+          "clients": [
+            {
+              "id": "test",
+              "secret": "PLACEHOLDER"
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "authorities": [
+            "web",
+            "web.app"
+          ],
+          "match": [
+            {
+              "prefix": "/oidc",
+              "with": {
+                "oidc": "keycloak",
+                "client": "test"
+              }
+            }
+          ]
+        }
+      ]
+    }
