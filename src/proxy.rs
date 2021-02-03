@@ -1,8 +1,10 @@
 use std::{borrow::Cow, ops::Deref, time::Duration};
 
+use anyhow::format_err;
 use log::{error, info, warn};
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
+use url::form_urlencoded::{self, Serializer};
 
 use crate::configuration::Configuration;
 
@@ -59,6 +61,9 @@ pub(crate) fn handle_oidc(
 impl HttpContext for OIDCAuthRequest {
     fn on_http_request_headers(&mut self, _: usize) -> FilterHeadersStatus {
         info!("on_http_request_headers: context_id {}", self.context_id);
+        let scheme = self
+            .get_http_request_header(":scheme")
+            .unwrap_or_else(|| "http".into());
         let authority = self.get_http_request_header(":authority").unwrap();
         let path = self.get_http_request_header(":path").unwrap();
         let (path, qs) = parse_path(path.as_str());
@@ -101,23 +106,20 @@ impl HttpContext for OIDCAuthRequest {
             }
         };
         let client_secret = client.secret();
-        let code_value = None;
+        let mut code_value = None;
         let qs = qs
             .map(|qs| {
-                url::form_urlencoded::parse(qs.as_bytes())
-                    .into_iter()
-                    .filter(|(k, v)| {
-                        if k == "code" {
+                form_urlencoded::parse(qs.as_bytes())
+                    .filter_map(|(k, v)| match k.as_ref() {
+                        "code" => {
                             code_value = Some(v);
-                            false
-                        } else if k != "session_state" {
-                            false
-                        } else {
-                            true
+                            None
                         }
+                        "session_state" => None,
+                        _ => Some((k, v)),
                     })
                     .fold(
-                        url::form_urlencoded::Serializer::new(String::with_capacity(qs.len())),
+                        Serializer::new(String::with_capacity(qs.len())),
                         |mut acc, (k, v)| {
                             acc.append_pair(k.as_ref(), v.as_ref());
                             acc
@@ -136,61 +138,68 @@ impl HttpContext for OIDCAuthRequest {
             }
         });
 
-        let a = match auth {
-            Some(authvalue) => {
-                info!("auth header present");
-                Some("a")
+        if auth.is_some() {
+            info!("auth header present");
+            return FilterHeadersStatus::Continue;
+        }
+
+        info!("auth header not present - checking for cookie with token");
+        let oidc_token = get_cookie_from_header(self, "cookie", "oidc_token").flatten();
+        if let Some(mut token) = oidc_token {
+            info!("cookie with token found, setting authorization");
+            token.insert_str(0, "Bearer ");
+            self.set_http_request_header("authorization", Some(&token));
+            return FilterHeadersStatus::Continue;
+        }
+        info!("cookie with token not found, looking for code param");
+
+        if let Some(code) = code_value {
+            let mut redirect_path = path.to_string();
+            if let Some(qs) = qs {
+                redirect_path.push('?');
+                redirect_path.push_str(qs.as_str());
             }
-            None => {
-                // XXX continue here
-                info!("auth header not present - checking for cookie with token");
-                let oidc_token = get_cookie_from_header(self, "cookie", "oidc_token").flatten();
-                if let Some(mut token) = oidc_token {
-                    info!("cookie with token found, setting authorization");
-                    token.insert_str(0, "Bearer ");
-                    self.set_http_request_header("authorization", Some(&token));
-                    return FilterHeadersStatus::Continue;
-                }
-                info!("cookie with token not found, looking for code param");
-                if let Some(code) = code_value {
-                    let redirect_path = if let Some(qs) = qs {
-                        format!("{}?{}", path, qs)
-                    } else {
-                        path.to_string()
-                    };
-                    let payload: String = url::form_urlencoded::Serializer::new(String::new())
-                        .append_pair("grant_type", "authorization_code")
-                        .append_pair("code", code.as_ref())
-                        .append_pair(
-                            "redirect_uri",
-                            format!("http://{}{}", authority, redirect_path).as_str(),
-                        )
-                        .append_pair("client_id", client_id)
-                        .append_pair("client_secret", client_secret)
-                        .finish();
+            let payload: String = Serializer::new(String::new())
+                .append_pair("grant_type", "authorization_code")
+                .append_pair("code", code.as_ref())
+                .append_pair(
+                    "redirect_uri",
+                    format!("http://{}{}", authority, redirect_path).as_str(),
+                )
+                .append_pair("client_id", client_id)
+                .append_pair("client_secret", client_secret)
+                .finish();
 
-                    info!("Contacting token endpoint with payload: {}", payload);
+            info!("Contacting token endpoint with payload: {}", payload);
 
-                    self.dispatch_http_call(
-                        oidc.upstream().name(),
-                        vec![
-                            (":method", "POST"),
-                            (":path", oidc.urls().token()),
-                            (":authority", oidc.upstream().authority()),
-                            ("Content-Type", "application/x-www-form-urlencoded"),
-                        ],
-                        Some(payload.as_bytes()),
-                        vec![],
-                        Duration::from_secs(5),
-                    )
-                    .unwrap();
-                    return FilterHeadersStatus::StopIteration;
-                }
-                Some("a")
-            }
-        };
+            self.dispatch_http_call(
+                oidc.upstream().name(),
+                vec![
+                    (":method", "POST"),
+                    (":path", oidc.urls().token()),
+                    (":authority", oidc.upstream().authority()),
+                    ("Content-Type", "application/x-www-form-urlencoded"),
+                ],
+                Some(payload.as_bytes()),
+                vec![],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        } else {
+            info!("no code found, redirecting to auth");
+            let uri = Serializer::new(String::new())
+                .append_pair("client_id", "test")
+                .append_pair("response_type", "code")
+                .append_pair("scope", "openid profile email")
+                .append_pair(
+                    "redirect_uri",
+                    format!("{}://{}{}", scheme, authority, path).as_str(),
+                )
+                .finish();
+            self.send_http_response(302, vec![("Location", uri.as_str())], None);
+        }
 
-        FilterHeadersStatus::Continue
+        return FilterHeadersStatus::StopIteration;
     }
 
     fn on_http_response_headers(&mut self, _: usize) -> FilterHeadersStatus {
