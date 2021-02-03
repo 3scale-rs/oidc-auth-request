@@ -1,17 +1,12 @@
-fn main() {
-    println!("Hello, world!\nMy favourite number is {}", some_fn());
-}
-
-fn some_fn() -> i32 {
-    42
-}
+mod configuration;
+mod proxy;
+mod upstream;
+mod url;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
+mod test {
     #[test]
-    fn some_fn_is_42() {
-        assert_eq!(some_fn(), 42);
+    fn it_works() {
+        assert!(true);
     }
 }
