@@ -1,7 +1,8 @@
 use anyhow::anyhow;
-use core::convert::{Into, TryFrom};
+use core::convert::TryFrom;
 use core::iter::Extend;
 use core::time::Duration;
+use url::Url;
 
 mod serde;
 
@@ -10,14 +11,13 @@ const DEFAULT_TIMEOUT_MS: u64 = 1000u64;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Upstream {
     name: String,
-    scheme: String,
-    authority: String,
-    base_path: Option<String>,
+    url: Url,
     // timeout in ms
     timeout: Duration,
 }
 
 impl Upstream {
+    #[allow(dead_code)]
     pub fn set_default_timeout(&mut self, timeout: u64) {
         self.timeout = Duration::from_millis(timeout);
     }
@@ -30,33 +30,43 @@ impl Upstream {
         self.name.as_str()
     }
 
+    #[allow(dead_code)]
     pub fn scheme(&self) -> &str {
-        self.scheme.as_str()
+        self.url.scheme()
     }
 
     pub fn authority(&self) -> &str {
-        self.authority.as_str()
+        self.url.authority()
     }
 
-    pub fn base_path(&self) -> Option<&str> {
-        self.base_path.as_deref()
+    pub fn path(&self) -> &str {
+        self.url.path()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    pub fn query_string(&self) -> Option<&str> {
+        self.url.query()
+    }
+
+    #[allow(dead_code, clippy::too_many_arguments)]
     pub fn call<C: proxy_wasm::traits::Context>(
         &self,
         ctx: &C,
-        path: impl ToString,
+        path: &str,
         method: &str,
         headers: Vec<(&str, &str)>,
         body: Option<&[u8]>,
         trailers: Option<Vec<(&str, &str)>>,
-        timeout: Option<u64>,
+        timeout_ms: Option<u64>,
     ) -> Result<u32, anyhow::Error> {
-        let mut path = path.to_string();
+        let extra_path = path.trim_start_matches('/');
+        let mut path = self.path().to_string();
+        path.push_str(extra_path);
 
-        if let Some(base_path) = self.base_path.as_deref() {
-            path.insert_str(0, base_path)
+        if let Some(qs) = self.query_string() {
+            if !path.contains('?') {
+                path.push('?');
+            }
+            path.push_str(qs);
         }
 
         let mut hdrs = vec![
@@ -81,16 +91,16 @@ impl Upstream {
             hdrs,
             body,
             trailers,
-            timeout
+            timeout_ms
                 .map(Duration::from_millis)
                 .unwrap_or_else(|| self.timeout),
         )
         .map_err(|e| {
             anyhow!(
                 "failed to dispatch HTTP ({}) call to cluster {} with authority {}: {:?}",
-                self.scheme,
-                self.name,
-                self.authority,
+                self.scheme(),
+                self.name(),
+                self.authority(),
                 e
             )
         })
@@ -99,23 +109,20 @@ impl Upstream {
 
 pub struct UpstreamBuilder {
     url: url::Url,
-    authority: String,
 }
 
 impl UpstreamBuilder {
-    pub fn build(self, name: impl ToString, timeout: Option<u64>) -> Upstream {
+    pub fn build(mut self, name: impl ToString, timeout: Option<u64>) -> Upstream {
         let name = name.to_string();
-        let scheme = self.url.scheme().to_string();
-        let base_path = match self.url.path() {
-            "/" => None,
-            path => path.to_string().into(),
-        };
+
+        // any specified path should always be considered a directory in which to further mount paths
+        if !self.url.path().ends_with('/') {
+            self.url.set_path(format!("{}/", self.url.path()).as_str());
+        }
 
         Upstream {
             name,
-            scheme,
-            authority: self.authority,
-            base_path,
+            url: self.url,
             timeout: Duration::from_millis(timeout.unwrap_or(DEFAULT_TIMEOUT_MS)),
         }
     }
@@ -125,8 +132,10 @@ impl TryFrom<url::Url> for UpstreamBuilder {
     type Error = anyhow::Error;
 
     fn try_from(url: url::Url) -> Result<Self, Self::Error> {
-        let authority = crate::url::authority(&url)
-            .ok_or_else(|| anyhow!("url does not contain an authority"))?;
-        Ok(UpstreamBuilder { url, authority })
+        if !url.has_authority() {
+            return Err(anyhow!("url does not contain an authority"));
+        }
+
+        Ok(UpstreamBuilder { url })
     }
 }

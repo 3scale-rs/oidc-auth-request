@@ -1,7 +1,6 @@
 mod configuration;
 mod proxy;
 mod upstream;
-mod url;
 
 #[cfg(test)]
 mod test {

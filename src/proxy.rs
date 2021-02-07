@@ -1,15 +1,16 @@
-use std::{borrow::Cow, ops::Deref, time::Duration};
-
-use anyhow::format_err;
 use log::{error, info, warn};
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
-use url::form_urlencoded::{self, Serializer};
+use url::form_urlencoded::Serializer;
 
 use crate::configuration::Configuration;
 
+mod request_headers;
+use request_headers::RequestHeaders;
+
 pub(crate) struct OIDCAuthRequest {
     context_id: u32,
+    call_id: u32,
     configuration: Configuration,
 }
 
@@ -19,37 +20,7 @@ impl OIDCAuthRequest {
     }
 }
 
-pub fn parse_path(path: &str) -> (&str, Option<&str>) {
-    let mut v = path.splitn(2, '?');
-    let path = v.next().unwrap();
-    let qs = v.next();
-    (path, qs)
-}
-
-fn extract_cookies<'a>(cookie_value: &'a str) -> impl Iterator<Item = (&'a str, Option<&'a str>)> {
-    cookie_value.split(';').map(|kv| {
-        let mut kviter = kv.splitn(2, '=');
-        (kviter.next().unwrap(), kviter.next())
-    })
-}
-fn get_cookie<'a>(cookie_value: &'a str, name: &str) -> Option<Option<&'a str>> {
-    extract_cookies(cookie_value)
-        .find_map(|(cookie, v)| if cookie == name { Some(v) } else { None })
-}
-
-pub fn get_cookie_from_header(
-    ctx: &dyn HttpContext,
-    header: &str,
-    name: &str,
-) -> Option<Option<String>> {
-    match ctx.get_http_request_header(header) {
-        Some(cookie_value) => {
-            get_cookie(cookie_value.as_str(), name).map(|value| value.map(ToString::to_string))
-        }
-        None => None,
-    }
-}
-
+#[allow(dead_code, unused_variables)]
 pub(crate) fn handle_oidc(
     ctx: &dyn HttpContext,
     oidc: &crate::configuration::OIDC,
@@ -61,23 +32,38 @@ pub(crate) fn handle_oidc(
 impl HttpContext for OIDCAuthRequest {
     fn on_http_request_headers(&mut self, _: usize) -> FilterHeadersStatus {
         info!("on_http_request_headers: context_id {}", self.context_id);
-        let scheme = self
-            .get_http_request_header(":scheme")
-            .unwrap_or_else(|| "http".into());
-        let authority = self.get_http_request_header(":authority").unwrap();
-        let path = self.get_http_request_header(":path").unwrap();
-        let (path, qs) = parse_path(path.as_str());
-        let _method = self.get_http_request_header(":method").unwrap();
+        let headers = RequestHeaders::new(self);
+        if headers.get("authorization").is_some() {
+            info!("auth header present");
+            return FilterHeadersStatus::Continue;
+        }
+
+        let url = match headers.url() {
+            Ok(url) => url,
+            Err(e) => {
+                error!("failed to parse request metadata: {:#?}", e);
+                return FilterHeadersStatus::StopIteration;
+            }
+        };
+
+        let authority = match url.authority() {
+            authority if !authority.is_empty() => authority,
+            _ => {
+                error!("failed to parse request authority");
+                return FilterHeadersStatus::StopIteration;
+            }
+        };
 
         let oidcs = self.configuration.oidcs();
-        let rules = self.configuration.rules();
+        let rules = self.configuration().rules();
 
-        let rule = match rules.iter().find(|r| r.match_authority(authority.as_str())) {
+        let rule = match rules.iter().find(|r| r.match_authority(authority)) {
             Some(rule) => rule,
             None => return FilterHeadersStatus::Continue,
         };
         info!("oidc_auth_request: found authority match for {}", authority);
 
+        let path = url.path();
         let rule_match = match rule.matches().iter().find(|m| m.match_prefix(path)) {
             Some(r#match) => r#match,
             None => return FilterHeadersStatus::Continue,
@@ -107,54 +93,39 @@ impl HttpContext for OIDCAuthRequest {
         };
         let client_secret = client.secret();
         let mut code_value = None;
-        let qs = qs
-            .map(|qs| {
-                form_urlencoded::parse(qs.as_bytes())
-                    .filter_map(|(k, v)| match k.as_ref() {
-                        "code" => {
-                            code_value = Some(v);
-                            None
-                        }
-                        "session_state" => None,
-                        _ => Some((k, v)),
-                    })
-                    .fold(
-                        Serializer::new(String::with_capacity(qs.len())),
-                        |mut acc, (k, v)| {
-                            acc.append_pair(k.as_ref(), v.as_ref());
-                            acc
-                        },
-                    )
-                    .finish()
+        let qs = match url
+            .query_pairs()
+            .filter_map(|(k, v)| match k.as_ref() {
+                "code" => {
+                    code_value = Some(v);
+                    None
+                }
+                "session_state" => None,
+                _ => Some((k, v)),
             })
-            .and_then(|qs| if qs.is_empty() { None } else { Some(qs) });
+            .fold(Serializer::new(String::new()), |mut acc, (k, v)| {
+                acc.append_pair(k.as_ref(), v.as_ref());
+                acc
+            })
+            .finish()
+        {
+            qs if qs.is_empty() => None,
+            qs => Some(qs),
+        };
 
-        let headers = self.get_http_request_headers();
-        let auth = headers.iter().find_map(|(h, v)| {
-            if h == "authorization" {
-                Some(v.as_str())
-            } else {
-                None
-            }
-        });
-
-        if auth.is_some() {
-            info!("auth header present");
-            return FilterHeadersStatus::Continue;
-        }
-
-        info!("auth header not present - checking for cookie with token");
-        let oidc_token = get_cookie_from_header(self, "cookie", "oidc_token").flatten();
-        if let Some(mut token) = oidc_token {
+        let oidc_token = headers
+            .get_cookie_from_header("cookie", "oidc_token")
+            .flatten();
+        if let Some(token) = oidc_token {
             info!("cookie with token found, setting authorization");
-            token.insert_str(0, "Bearer ");
-            self.set_http_request_header("authorization", Some(&token));
+            let value = format!("Bearer {}", token);
+            self.set_http_request_header("authorization", Some(value.as_str()));
             return FilterHeadersStatus::Continue;
         }
         info!("cookie with token not found, looking for code param");
 
         if let Some(code) = code_value {
-            let mut redirect_path = path.to_string();
+            let mut redirect_path = url.path().to_string();
             if let Some(qs) = qs {
                 redirect_path.push('?');
                 redirect_path.push_str(qs.as_str());
@@ -164,7 +135,7 @@ impl HttpContext for OIDCAuthRequest {
                 .append_pair("code", code.as_ref())
                 .append_pair(
                     "redirect_uri",
-                    format!("http://{}{}", authority, redirect_path).as_str(),
+                    format!("{}://{}{}", url.scheme(), authority, redirect_path).as_str(),
                 )
                 .append_pair("client_id", client_id)
                 .append_pair("client_secret", client_secret)
@@ -172,28 +143,34 @@ impl HttpContext for OIDCAuthRequest {
 
             info!("Contacting token endpoint with payload: {}", payload);
 
-            self.dispatch_http_call(
-                oidc.upstream().name(),
-                vec![
-                    (":method", "POST"),
-                    (":path", oidc.urls().token()),
-                    (":authority", oidc.upstream().authority()),
-                    ("Content-Type", "application/x-www-form-urlencoded"),
-                ],
+            match oidc.upstream().call(
+                self,
+                oidc.urls().token(),
+                "POST",
+                vec![("Content-Type", "application/x-www-form-urlencoded")],
                 Some(payload.as_bytes()),
-                vec![],
-                Duration::from_secs(5),
-            )
-            .unwrap();
+                None,
+                5000.into(),
+            ) {
+                Ok(call_id) => self.call_id = call_id,
+                Err(e) => {
+                    error!(
+                        "failed to call upstream {:?} with path {}: {:#?}",
+                        oidc.upstream(),
+                        oidc.urls().token(),
+                        e,
+                    );
+                }
+            }
         } else {
             info!("no code found, redirecting to auth");
-            let uri = Serializer::new(String::new())
+            let uri = Serializer::new(format!("{}?", oidc.urls().login()))
                 .append_pair("client_id", "test")
                 .append_pair("response_type", "code")
                 .append_pair("scope", "openid profile email")
                 .append_pair(
                     "redirect_uri",
-                    format!("{}://{}{}", scheme, authority, path).as_str(),
+                    format!("{}://{}{}", url.scheme(), authority, url.path()).as_str(),
                 )
                 .finish();
             self.send_http_response(302, vec![("Location", uri.as_str())], None);

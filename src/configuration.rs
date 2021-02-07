@@ -37,13 +37,14 @@ pub(crate) struct OIDCUrls {
     token: String,
 }
 
+// FIXME this should likely just be URLs.
 impl OIDCUrls {
     pub fn login(&self) -> &str {
         self.login.as_str()
     }
 
     pub fn token(&self) -> &str {
-        self.login.as_str()
+        self.token.as_str()
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

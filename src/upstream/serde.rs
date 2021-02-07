@@ -118,10 +118,12 @@ impl Serialize for Upstream {
 
         st.serialize_field("name", self.name())?;
 
-        let mut url_s = format!("https://{}", self.authority());
-        if let Some(base_path) = self.base_path() {
-            url_s.push_str(base_path);
-        }
+        let url_s = format!(
+            "{}://{}{}",
+            self.url.scheme(),
+            self.authority(),
+            self.path()
+        );
         st.serialize_field("url", url_s.as_str())?;
 
         let timeout = self.default_timeout();
