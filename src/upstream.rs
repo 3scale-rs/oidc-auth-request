@@ -48,6 +48,54 @@ impl Upstream {
     }
 
     #[allow(dead_code, clippy::too_many_arguments)]
+    fn do_call<C: proxy_wasm::traits::Context>(
+        ctx: &C,
+        name: &str,
+        scheme: &str,
+        authority: &str,
+        path: &str,
+        method: &str,
+        headers: Vec<(&str, &str)>,
+        body: Option<&[u8]>,
+        trailers: Option<Vec<(&str, &str)>>,
+        timeout_ms: Option<u64>,
+    ) -> Result<u32, anyhow::Error> {
+        let mut hdrs = vec![
+            (":authority", authority),
+            (":scheme", scheme),
+            (":method", method),
+            (":path", path),
+        ];
+
+        hdrs.extend(headers);
+
+        let trailers = trailers.unwrap_or_default();
+        log::debug!(
+            "calling out {} (using {} scheme) with headers -> {:?} <- and body -> {:?} <-",
+            name,
+            scheme,
+            hdrs,
+            body
+        );
+        ctx.dispatch_http_call(
+            name,
+            hdrs,
+            body,
+            trailers,
+            timeout_ms.or_else(0).map(Duration::from_millis).unwrap(),
+        )
+        .map_err(|e| {
+            anyhow!(
+                "failed to dispatch HTTP ({}) call to cluster {} with authority {}: {:?}",
+                scheme,
+                name,
+                authority,
+                e
+            )
+        })
+    }
+
+    #[allow(dead_code, clippy::too_many_arguments)]
     pub fn call<C: proxy_wasm::traits::Context>(
         &self,
         ctx: &C,
@@ -69,11 +117,44 @@ impl Upstream {
             path.push_str(qs);
         }
 
+        Self::do_call(
+            ctx,
+            self.name(),
+            self.scheme(),
+            self.authority(),
+            path.as_str(),
+            method,
+            headers,
+            body,
+            trailers,
+            timeout_ms.or(self.timeout.as_millis()),
+        )
+    }
+
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn call_with_url<C: proxy_wasm::traits::Context>(
+        &self,
+        ctx: &C,
+        url: &Url,
+        method: &str,
+        headers: Vec<(&str, &str)>,
+        body: Option<&[u8]>,
+        trailers: Option<Vec<(&str, &str)>>,
+        timeout_ms: Option<u64>,
+    ) -> Result<u32, anyhow::Error> {
+        let mut path: std::borrow::Cow<str> = url.path().into();
+
+        if let Some(qs) = url.query() {
+            let path_mut = path.to_mut();
+            path_mut.push('?');
+            path_mut.push_str(qs);
+        }
+
         let mut hdrs = vec![
-            (":authority", self.authority()),
-            (":scheme", self.scheme()),
+            (":authority", url.authority()),
+            (":scheme", url.scheme()),
             (":method", method),
-            (":path", path.as_str()),
+            (":path", path.as_ref()),
         ];
 
         hdrs.extend(headers);

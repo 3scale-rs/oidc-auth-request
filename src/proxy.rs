@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 use url::form_urlencoded::Serializer;
@@ -10,7 +10,8 @@ use request_headers::RequestHeaders;
 
 pub(crate) struct OIDCAuthRequest {
     context_id: u32,
-    call_id: u32,
+    call_token: Option<u32>,
+    url: Option<url::Url>,
     configuration: Configuration,
 }
 
@@ -45,6 +46,9 @@ impl HttpContext for OIDCAuthRequest {
                 return FilterHeadersStatus::StopIteration;
             }
         };
+
+        self.url = Some(url);
+        let url = self.url.as_ref().unwrap();
 
         let authority = match url.authority() {
             authority if !authority.is_empty() => authority,
@@ -152,15 +156,8 @@ impl HttpContext for OIDCAuthRequest {
                 None,
                 5000.into(),
             ) {
-                Ok(call_id) => self.call_id = call_id,
-                Err(e) => {
-                    error!(
-                        "failed to call upstream {:?} with path {}: {:#?}",
-                        oidc.upstream(),
-                        oidc.urls().token(),
-                        e,
-                    );
-                }
+                Ok(call_token) => self.call_token = Some(call_token),
+                Err(e) => error!("{}", e),
             }
         } else {
             info!("no code found, redirecting to auth");
@@ -186,22 +183,62 @@ impl HttpContext for OIDCAuthRequest {
 }
 
 impl Context for OIDCAuthRequest {
-    fn on_http_call_response(&mut self, call_token: u32, _: usize, _: usize, _: usize) {
+    fn on_http_call_response(&mut self, call_token: u32, _: usize, body_size: usize, _: usize) {
         info!("on_http_call_response: call_token is {}", call_token);
-        let authorized = self
-            .get_http_call_response_headers()
-            .into_iter()
-            .find(|(key, _)| key.as_str() == ":status")
-            .map(|(_, value)| value.as_str() == "200")
-            .unwrap_or(false);
 
-        if authorized {
-            info!("on_http_call_response: authorized {}", call_token);
-            self.resume_http_request();
+        if let Some(body) = self.get_http_call_response_body(0, body_size) {
+            let json = serde_json::from_slice::<serde_json::Value>(body.as_slice());
+            if let Err(e) = json {
+                error!("failed to parse JSON response back from IDP: {}", e);
+                self.send_http_response(403, vec![], Some(b"Access forbidden.\n"));
+                return;
+            }
+            let json = json.unwrap();
+            debug!("JSON received: {:#?}", json);
+            if let Some(error) = json.get("error") {
+                error!(
+                    "error fetching token {}: {}",
+                    error,
+                    json.get("error_description")
+                        .map(|v| v.as_str())
+                        .flatten()
+                        .unwrap_or("no error description found"),
+                );
+                return;
+            }
+            if let Some(token) = json.get("id_token") {
+                info!("token found, setting cookie");
+                let url = self.url.as_ref().unwrap();
+                // FIXME rather than redirect, maybe resume_http_request with the right cookie?
+                self.send_http_response(
+                    302,
+                    vec![
+                        (
+                            "set-cookie",
+                            format!(
+                                "oidcToken={};Max-Age={}",
+                                token,
+                                json.get("expires_in").unwrap()
+                            )
+                            .as_str(),
+                        ),
+                        (
+                            "Location",
+                            format!("{}://{}{}", url.scheme(), url.authority(), url.path())
+                                .as_str(),
+                        ),
+                    ],
+                    None,
+                );
+                return;
+            } else {
+                error!("no id_token field found in JSON response");
+            }
         } else {
-            info!("on_http_call_response: forbidden {}", call_token);
-            self.send_http_response(403, vec![], Some(b"Access forbidden.\n"));
+            error!("no response body from IDP");
         }
+
+        self.send_http_response(403, vec![], Some(b"Access forbidden.\n"));
     }
 }
 
@@ -305,6 +342,8 @@ impl RootContext for RootOIDCAuthRequest {
         info!("creating new context {}", context_id);
         let ctx = OIDCAuthRequest {
             context_id,
+            call_token: None,
+            url: None,
             configuration: self.configuration.as_ref().unwrap().clone(),
         };
 
