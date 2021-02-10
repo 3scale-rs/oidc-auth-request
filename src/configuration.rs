@@ -4,6 +4,7 @@ use crate::upstream::Upstream;
 use core::convert::TryFrom;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use url::Url;
 
 #[derive(Debug, Error)]
 pub(crate) enum MissingError {
@@ -33,18 +34,18 @@ impl Client {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct OIDCUrls {
-    login: String,
-    token: String,
+    login: Url,
+    token: Url,
 }
 
 // FIXME this should likely just be URLs.
 impl OIDCUrls {
-    pub fn login(&self) -> &str {
-        self.login.as_str()
+    pub fn login(&self) -> &Url {
+        &self.login
     }
 
-    pub fn token(&self) -> &str {
-        self.token.as_str()
+    pub fn token(&self) -> &Url {
+        &self.token
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -58,7 +58,7 @@ impl HttpContext for OIDCAuthRequest {
             }
         };
 
-        let oidcs = self.configuration.oidcs();
+        let oidcs = self.configuration().oidcs();
         let rules = self.configuration().rules();
 
         let rule = match rules.iter().find(|r| r.match_authority(authority)) {
@@ -147,7 +147,7 @@ impl HttpContext for OIDCAuthRequest {
 
             info!("Contacting token endpoint with payload: {}", payload);
 
-            match oidc.upstream().call(
+            match oidc.upstream().call_url(
                 self,
                 oidc.urls().token(),
                 "POST",
