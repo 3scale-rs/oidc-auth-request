@@ -58,7 +58,7 @@ impl Upstream {
         headers: Vec<(&str, &str)>,
         body: Option<&[u8]>,
         trailers: Option<Vec<(&str, &str)>>,
-        timeout_ms: Option<u64>,
+        timeout: Duration,
     ) -> Result<u32, anyhow::Error> {
         let mut hdrs = vec![
             (":authority", authority),
@@ -77,22 +77,16 @@ impl Upstream {
             hdrs,
             body
         );
-        ctx.dispatch_http_call(
-            name,
-            hdrs,
-            body,
-            trailers,
-            timeout_ms.or_else(0).map(Duration::from_millis).unwrap(),
-        )
-        .map_err(|e| {
-            anyhow!(
-                "failed to dispatch HTTP ({}) call to cluster {} with authority {}: {:?}",
-                scheme,
-                name,
-                authority,
-                e
-            )
-        })
+        ctx.dispatch_http_call(name, hdrs, body, trailers, timeout)
+            .map_err(|e| {
+                anyhow!(
+                    "failed to dispatch HTTP ({}) call to cluster {} with authority {}: {:?}",
+                    scheme,
+                    name,
+                    authority,
+                    e
+                )
+            })
     }
 
     #[allow(dead_code, clippy::too_many_arguments)]
@@ -127,12 +121,14 @@ impl Upstream {
             headers,
             body,
             trailers,
-            timeout_ms.or(self.timeout.as_millis()),
+            timeout_ms
+                .map(Duration::from_millis)
+                .unwrap_or(self.timeout),
         )
     }
 
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub fn call_with_url<C: proxy_wasm::traits::Context>(
+    pub fn call_url<C: proxy_wasm::traits::Context>(
         &self,
         ctx: &C,
         url: &Url,
@@ -150,41 +146,18 @@ impl Upstream {
             path_mut.push_str(qs);
         }
 
-        let mut hdrs = vec![
-            (":authority", url.authority()),
-            (":scheme", url.scheme()),
-            (":method", method),
-            (":path", path.as_ref()),
-        ];
-
-        hdrs.extend(headers);
-
-        let trailers = trailers.unwrap_or_default();
-        log::debug!(
-            "calling out {} (using {} scheme) with headers -> {:?} <- and body -> {:?} <-",
+        Self::do_call(
+            ctx,
             self.name(),
-            self.scheme(),
-            hdrs,
-            body
-        );
-        ctx.dispatch_http_call(
-            self.name.as_str(),
-            hdrs,
+            url.scheme(),
+            url.authority(),
+            path.as_ref(),
+            method,
+            headers,
             body,
             trailers,
-            timeout_ms
-                .map(Duration::from_millis)
-                .unwrap_or_else(|| self.timeout),
+            Duration::from_millis(timeout_ms.unwrap_or(0)),
         )
-        .map_err(|e| {
-            anyhow!(
-                "failed to dispatch HTTP ({}) call to cluster {} with authority {}: {:?}",
-                self.scheme(),
-                self.name(),
-                self.authority(),
-                e
-            )
-        })
     }
 }
 
