@@ -182,6 +182,15 @@ curl-ossm: export KUBECTL?=oc
 curl-ossm: ## Perform a curl call to your Openshift Service Mesh or Maistra Ingress
 	$(MAKE) curl-istio
 
+.PHONY: envoy-certs
+envoy-certs:
+	mkdir -p $(PROJECT_PATH)/compose/envoy/certs
+	openssl req -nodes -new -x509 \
+		-keyout $(PROJECT_PATH)/compose/envoy/certs/envoy.key \
+		-out $(PROJECT_PATH)/compose/envoy/certs/envoy.crt \
+		-days 365 \
+		-subj '/CN=envoy-example.com/O=My Company/C=US'
+
 # Check http://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
 .PHONY: help
 help: ## Print this help
