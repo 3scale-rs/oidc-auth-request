@@ -12,17 +12,17 @@ services:
       - "8080"
       - "8001"
     ports:
-      - "80"
-      - "443"
-      - "8080"
-      - "8001"
+      - "8080:80"
+      - "8443:443"
+      - "9080:8080"
+      - "9001:8001"
     scale: 1
     domainname: "ingress"
     networks:
       - ingress
       - mesh
   web:
-    image: docker.io/kennethreitz/httpbin
+    image: quay.io/3scale/echoapi:stable
     expose:
       - "80"
     ports:
@@ -50,8 +50,8 @@ services:
       - "8080"
       - "8443"
     ports:
-      - "8080"
-      - "8443"
+      - "18080:8080"
+      - "18443:8443"
     domainname: "sso"
     networks:
       ingress:

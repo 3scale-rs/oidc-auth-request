@@ -25,6 +25,7 @@ resources:
                     domains:
                       - web
                       - web.app
+                      - "*"
                     routes:
                       - match:
                           prefix: "/"
@@ -64,8 +65,8 @@ resources:
                                   "timeout": 5000
                                 },
                                 "urls": {
-                                  "login": "http://keycloak/auth/realms/wasmauth/protocol/openid-connect/auth",
-                                  "token": "http://keycloak/auth/realms/wasmauth/protocol/openid-connect/token"
+                                  "login": "http://0.0.0.0:18080/auth/realms/wasmauth/protocol/openid-connect/auth",
+                                  "token": "http://0.0.0.0:18080/auth/realms/wasmauth/protocol/openid-connect/token"
                                 },
                                 "clients": [
                                   {
@@ -79,7 +80,9 @@ resources:
                               {
                                 "authorities": [
                                   "web",
-                                  "web.app"
+                                  "web.app",
+                                  "0.0.0.0:8080",
+                                  "0.0.0.0:9080"
                                 ],
                                 "match": [
                                   {

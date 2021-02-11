@@ -47,6 +47,8 @@ impl HttpContext for OIDCAuthRequest {
             }
         };
 
+        info!("parsed url {}", url.to_string());
+
         self.url = Some(url);
         let url = self.url.as_ref().unwrap();
 
@@ -63,14 +65,20 @@ impl HttpContext for OIDCAuthRequest {
 
         let rule = match rules.iter().find(|r| r.match_authority(authority)) {
             Some(rule) => rule,
-            None => return FilterHeadersStatus::Continue,
+            None => {
+                info!("oidc_auth_request: authority not found: {}", authority);
+                return FilterHeadersStatus::Continue;
+            }
         };
         info!("oidc_auth_request: found authority match for {}", authority);
 
         let path = url.path();
         let rule_match = match rule.matches().iter().find(|m| m.match_prefix(path)) {
             Some(r#match) => r#match,
-            None => return FilterHeadersStatus::Continue,
+            None => {
+                info!("oidc_auth_request: rule not found for {}", path);
+                return FilterHeadersStatus::Continue;
+            }
         };
         info!("oidc_auth_request: found rule match for path {}", path);
 
