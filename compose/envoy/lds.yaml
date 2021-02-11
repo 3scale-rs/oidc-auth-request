@@ -65,13 +65,13 @@ resources:
                                   "timeout": 5000
                                 },
                                 "urls": {
-                                  "login": "http://0.0.0.0:18080/auth/realms/wasmauth/protocol/openid-connect/auth",
-                                  "token": "http://0.0.0.0:18080/auth/realms/wasmauth/protocol/openid-connect/token"
+                                  "login": "http://0.0.0.0:18080/auth/realms/master/protocol/openid-connect/auth",
+                                  "token": "http://0.0.0.0:18080/auth/realms/master/protocol/openid-connect/token"
                                 },
                                 "clients": [
                                   {
                                     "id": "test",
-                                    "secret": "PLACEHOLDER"
+                                    "secret": "6635a48d-ed3c-4eb6-a256-9470eba2cd01"
                                   }
                                 ]
                               }
@@ -101,13 +101,13 @@ resources:
                   config:
                     providers:
                       oidc_provider:
-                        issuer: http://keycloak/auth/realms/wasmauth
+                        issuer: http://keycloak/auth/realms/master
                         audiences:
                           - admin-cli
                         forward: true
                         remote_jwks:
                           http_uri:
-                            uri: http://keycloak/auth/realms/wasmauth/protocol/openid-connect/certs
+                            uri: http://keycloak/auth/realms/master/protocol/openid-connect/certs
                             cluster: keycloak
                             timeout: 5s
                           cache_duration:
