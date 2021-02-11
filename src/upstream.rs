@@ -70,12 +70,16 @@ impl Upstream {
         hdrs.extend(headers);
 
         let trailers = trailers.unwrap_or_default();
+        let body_str = match body {
+            Some(bytes) => String::from_utf8_lossy(bytes),
+            None => "(nothing)".into(),
+        };
         log::debug!(
             "calling out {} (using {} scheme) with headers -> {:?} <- and body -> {:?} <-",
             name,
             scheme,
             hdrs,
-            body
+            body_str.as_ref()
         );
         ctx.dispatch_http_call(name, hdrs, body, trailers, timeout)
             .map_err(|e| {

@@ -193,8 +193,22 @@ impl HttpContext for OIDCAuthRequest {
 impl Context for OIDCAuthRequest {
     fn on_http_call_response(&mut self, call_token: u32, _: usize, body_size: usize, _: usize) {
         info!("on_http_call_response: call_token is {}", call_token);
+        let headers = self.get_http_call_response_headers();
+        let status = headers
+            .iter()
+            .find(|(key, _)| key.as_str() == ":status")
+            .map(|(_, value)| value.as_str());
+        let body = self.get_http_call_response_body(0, body_size);
+        let body_str = match body {
+            Some(ref bytes) => String::from_utf8_lossy(bytes.as_slice()),
+            None => "(nothing)".into(),
+        };
+        debug!(
+            "Got back response status {:?} and body: {}",
+            status, body_str
+        );
 
-        if let Some(body) = self.get_http_call_response_body(0, body_size) {
+        if let Some(body) = body {
             let json = serde_json::from_slice::<serde_json::Value>(body.as_slice());
             if let Err(e) = json {
                 error!("failed to parse JSON response back from IDP: {}", e);
