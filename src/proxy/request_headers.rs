@@ -104,7 +104,10 @@ impl RequestHeaders {
         let (path, qs) = self.path_n_qs();
 
         RequestMetadata {
-            scheme: self.get(":scheme").unwrap_or("http"),
+            scheme: self
+                .get(":scheme")
+                .or(self.get("x-forwarded-proto"))
+                .unwrap_or("http"),
             authority: self.get(":authority").unwrap(),
             method: self.get(":method").unwrap(),
             path,

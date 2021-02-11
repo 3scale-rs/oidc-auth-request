@@ -37,6 +37,8 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak
+    logging:
+      driver: none
     volumes:
       - ${KEYCLOAK_DIR:-./keycloak}:/etc/keycloak/:z,ro
     environment:

@@ -28,9 +28,9 @@ resources:
                     routes:
                       - match:
                           prefix: "/"
-                        redirect:
-                          path_redirect: "/"
-                          https_redirect: true
+                        #redirect:
+                        #  path_redirect: "/"
+                        #  https_redirect: true
                         route:
                           cluster: web
               http_filters:
