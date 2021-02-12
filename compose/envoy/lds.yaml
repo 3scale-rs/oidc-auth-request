@@ -71,7 +71,7 @@ resources:
                                 "clients": [
                                   {
                                     "id": "test",
-                                    "secret": "6635a48d-ed3c-4eb6-a256-9470eba2cd01"
+                                    "secret": "7d9043c4-1b3e-46fe-aac5-6054da3468f8"
                                   }
                                 ]
                               }

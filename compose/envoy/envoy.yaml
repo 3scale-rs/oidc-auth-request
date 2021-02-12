@@ -22,7 +22,7 @@ static_resources:
                   address:
                     socket_address:
                       address: web
-                      port_value: 80
+                      port_value: 9292
     - name: keycloak
       connect_timeout: 1.0s
       type: logical_dns

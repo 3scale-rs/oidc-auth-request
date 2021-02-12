@@ -24,9 +24,9 @@ services:
   web:
     image: quay.io/3scale/echoapi:stable
     expose:
-      - "80"
+      - "9292"
     ports:
-      - "80"
+      - "9292"
     scale: 1
     domainname: "app"
     networks:

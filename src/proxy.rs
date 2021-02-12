@@ -21,15 +21,6 @@ impl OIDCAuthRequest {
     }
 }
 
-#[allow(dead_code, unused_variables)]
-pub(crate) fn handle_oidc(
-    ctx: &dyn HttpContext,
-    oidc: &crate::configuration::OIDC,
-    client: &crate::configuration::Client,
-) -> i32 {
-    1
-}
-
 impl HttpContext for OIDCAuthRequest {
     fn on_http_request_headers(&mut self, _: usize) -> FilterHeadersStatus {
         info!("on_http_request_headers: context_id {}", self.context_id);
@@ -172,7 +163,7 @@ impl HttpContext for OIDCAuthRequest {
             let uri = Serializer::new(format!("{}?", oidc.urls().login()))
                 .append_pair("client_id", "test")
                 .append_pair("response_type", "code")
-                .append_pair("scope", "openid profile email")
+                .append_pair("scope", "profile email")
                 .append_pair(
                     "redirect_uri",
                     format!("{}://{}{}", url.scheme(), authority, url.path()).as_str(),

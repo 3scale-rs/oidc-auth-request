@@ -104,10 +104,7 @@ impl RequestHeaders {
         let (path, qs) = self.path_n_qs();
 
         RequestMetadata {
-            scheme: self
-                .get(":scheme")
-                .or(self.get("x-forwarded-proto"))
-                .unwrap_or("http"),
+            scheme: self.get_scheme(),
             authority: self.get(":authority").unwrap(),
             method: self.get(":method").unwrap(),
             path,
@@ -117,12 +114,19 @@ impl RequestHeaders {
 
     pub fn url(&self) -> Result<Url, anyhow::Error> {
         debug!("headers: {:?}", self.0);
-        //let scheme = self.get(":scheme").ok_or(MetadataError::Scheme)?;
-        let scheme = self.get(":scheme").unwrap_or("https");
+
+        let scheme = self.get_scheme();
         let authority = self.get(":authority").ok_or(MetadataError::Authority)?;
         let path = self.get(":path").ok_or(MetadataError::Path)?;
         let url = Url::parse(format!("{}://{}{}", scheme, authority, path).as_str())?;
         Ok(url)
+    }
+
+    fn get_scheme(&self) -> &str {
+        //let scheme = self.get(":scheme").ok_or(MetadataError::Scheme)?;
+        self.get(":scheme")
+            .or(self.get("x-forwarded-proto"))
+            .unwrap_or("https")
     }
 }
 
