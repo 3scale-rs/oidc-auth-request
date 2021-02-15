@@ -21,7 +21,7 @@ call_token_endpoint() {
 }
 
 call_token_endpoint_no_headers() {
-	call_token_endpoint "${@}" | sed -E -e '0,/^$/d'
+	call_token_endpoint "${@}" | sed -E -e '0,/^[[:space:]]*$/d'
 }
 
 call_with_token() {
@@ -41,7 +41,7 @@ call_with_token() {
 }
 
 call_with_token_no_headers() {
-	call_with_token "${@}" | sed -E -e '0,/^$/d'
+	call_with_token "${@}" | sed -E -e '0,/^[[:space:]]*$/d'
 }
 
 call_idp() {
@@ -60,7 +60,30 @@ call_idp() {
 }
 
 call_idp_no_headers() {
-	call_idp "${@}" | sed -E -e '0,/^$/d'
+	call_idp "${@}" | sed -E -e '0,/^[[:space:]]*$/d'
+}
+
+get_auth_form() {
+	local url="${1}"
+	local realm="${2}"
+	local client_id="${3:-test}"
+	local scope="${4:-profile+email}"
+
+	local url="${url}/auth/realms/${realm}/protocol/openid-connect/auth?client_id=${client_id}&response_type=code&scope=${scope}&redirect_uri=http%3A%2F%2F0.0.0.0%3A8080%2Foidc"
+	local response=$(curl -sSf -i -c ./cookies -X GET \
+		"${url}")
+
+	[[ VERBOSE == "y" ]] && /bin/echo -e "get_auth_form() ${url}:\n${response}" >&2
+	echo "${response}"
+}
+
+parse_auth_form() {
+	local body="${1}"
+
+	# XXX FIXME continue here
+	# currently prints just http
+	# echo '<form id="kc-form-login" onsubmit="login.disabled = true; return true;" action="http://0.0.0.0:18080/auth/realms/master/login-actions/authenticate?session_code=HQntyAV0dKErLrBLCHQkFTnXSm-VJEbkmPgIkrFcBLk&amp;execution=de753dea-ca23-406a-8103-b6ecdccca4b3&amp;client_id=test&amp;tab_id=af78L1JMAS8" method="post">' | sed -n -E -e 's/<form id="kc-form-login".* action="([[:alnum:]]+).*"[ >]/\1/p'
+	echo "${body}" | sed -n -E -e 's/<form id="kc-form-login".* action="([[:alnum:]]+).*"[ >]/\1/p'
 }
 
 # gets back a code
@@ -109,7 +132,7 @@ get_access_token() {
 	local user="${4}"
 	local passwd="${5}"
 
-	call_auth_token_password "${url}" "${realm}" "${client_id}" "${user}" "${passwd}" | sed -E -e '0,/^$/d' | jq -r ".access_token"
+	call_auth_token_password "${url}" "${realm}" "${client_id}" "${user}" "${passwd}" | sed -E -e '0,/^[[:space:]]*$/d' | jq -r ".access_token"
 }
 
 add_client() {
@@ -169,6 +192,12 @@ main() {
 	echo "=== Init auth flow via browser by requesting code for test via administrative user/passwd authentication against IDP ==="
 
 	sleep 1
+
+	echo "-> Simulating we access the login form"
+	get_auth_form "${url}" "${realm}" test
+	echo "<- Got auth form"
+
+	sleep 5
 
 	echo "-> Login via browser using admin credentials to request a temporary authz code for test application"
 	CODE=$(login "${url}" "${realm}" "${user}" "${passwd}" test)
