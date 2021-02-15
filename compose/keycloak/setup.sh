@@ -20,13 +20,17 @@ call_token_endpoint() {
 	echo "${response}"
 }
 
+call_token_endpoint_no_headers() {
+	call_token_endpoint "${@}" | sed -E -e '0,/^$/d'
+}
+
 call_with_token() {
 	local method="${1}"
 	local url="${2}"
 	local token="${3}"
 	local payload="${4}"
 
-	local response=$(curl -sSfL -X "${method}" \
+	local response=$(curl -sSf -i -X "${method}" \
 		-H "Authorization: Bearer ${token}" \
 		-H "Content-Type: application/json" \
 		-d "${payload}" \
@@ -34,6 +38,10 @@ call_with_token() {
 
 	[[ VERBOSE == "y" ]] && /bin/echo -e "call_with_token() ${url}:\n${response}" >&2
 	echo "${response}"
+}
+
+call_with_token_no_headers() {
+	call_with_token "${@}" | sed -E -e '0,/^$/d'
 }
 
 call_idp() {
@@ -49,6 +57,10 @@ call_idp() {
 
 	[[ VERBOSE == "y" ]] && /bin/echo -e "call_idp() ${url}:\n${response}" >&2
 	echo "${response}"
+}
+
+call_idp_no_headers() {
+	call_idp "${@}" | sed -E -e '0,/^$/d'
 }
 
 # gets back a code
@@ -74,7 +86,7 @@ call_auth_token_password() {
 	local user="${4}"
 	local passwd="${5}"
 
-	call_token_endpoint "${url}" "${realm}" "${client_id}" "password" "user=${user}&password=${passwd}"
+	call_token_endpoint "${url}" "${realm}" "${client_id}" "password" "username=${user}&password=${passwd}"
 }
 
 # Generates a Location with the right credentials for JWT authn
@@ -97,7 +109,7 @@ get_access_token() {
 	local user="${4}"
 	local passwd="${5}"
 
-	call_auth_token_password "${url}" "${realm}" "${client_id}" "${user}" "${passwd}" | jq -r ".access_token"
+	call_auth_token_password "${url}" "${realm}" "${client_id}" "${user}" "${passwd}" | sed -E -e '0,/^$/d' | jq -r ".access_token"
 }
 
 add_client() {
@@ -117,7 +129,7 @@ get_client_secret() {
 	local id="${4}"
 
 	#call_with_token GET "${url}/auth/admin/realms/${realm}/clients/${id}/client-secret" "${token}" '{ "id": "test", "name": "test", "redirectUris": ["*"] }' | jq -r ".value"
-	call_with_token GET "${url}/auth/admin/realms/${realm}/clients/${id}/client-secret" "${token}" | jq -r ".value"
+	call_with_token_no_headers GET "${url}/auth/admin/realms/${realm}/clients/${id}/client-secret" "${token}" | jq -r ".value"
 }
 
 main() {
