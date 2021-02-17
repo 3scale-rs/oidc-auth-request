@@ -163,7 +163,7 @@ impl HttpContext for OIDCAuthRequest {
             let uri = Serializer::new(format!("{}?", oidc.urls().login()))
                 .append_pair("client_id", "test")
                 .append_pair("response_type", "code")
-                .append_pair("scope", "profile email")
+                .append_pair("scope", "openid profile email")
                 .append_pair(
                     "redirect_uri",
                     format!("{}://{}{}", url.scheme(), authority, url.path()).as_str(),
