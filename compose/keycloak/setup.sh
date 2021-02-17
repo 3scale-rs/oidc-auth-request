@@ -40,13 +40,10 @@ call_idp() {
 	local ctype="${3}"
 	local payload="${4}"
 
-	local response=$(curl -sSf -i -c ./cookies -b ./cookies -X "${method}" \
+	curl -sSf -i -c ./cookies -b ./cookies -X "${method}" \
 		-H "Content-Type: ${ctype}" \
 		-d "${payload}" \
-		"${url}")
-
-	[[ VERBOSE == "y" ]] && /bin/echo -e "call_idp() ${url}:\n${response}" >&2
-	echo "${response}"
+		"${url}"
 }
 
 get_auth_form() {
@@ -56,11 +53,8 @@ get_auth_form() {
 	local scope="${4:-openid+profile+email}"
 
 	local url="${url}/auth/realms/${realm}/protocol/openid-connect/auth?client_id=${client_id}&response_type=code&scope=${scope}&redirect_uri=http%3A%2F%2F0.0.0.0%3A8080%2Foidc"
-	local response=$(curl -sSf -i -c ./cookies -b ./cookies -X GET \
-		"${url}")
 
-	[[ VERBOSE == "y" ]] && /bin/echo -e "get_auth_form() ${url}:\n${response}" >&2
-	echo "${response}"
+	curl -sSf -i -c ./cookies -b ./cookies -X GET "${url}"
 }
 
 # returns the login form URL
@@ -106,7 +100,6 @@ call_auth_token_code() {
 	local code="${5}"
 	local redirect_uri="${6:-"http%3A%2F%2F0.0.0.0%3A8080%2Foidc"}"
 
-	#call_idp "POST" "${url}/auth/realms/${realm}/protocol/openid-connect/token" "application/x-www-form-urlencoded" "grant_type=authorization_code&code=${code}&redirect_uri=http%3A%2F%2F0.0.0.0%3A8080%2Foidc&client_id=test&client_secret=${client_secret}"
 	call_token_endpoint "${url}" "${realm}" "${client_id}" "authorization_code" "code=${code}&client_secret=${client_secret}&redirect_uri=${redirect_uri}"
 }
 
