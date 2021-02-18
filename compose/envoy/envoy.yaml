@@ -11,8 +11,6 @@ static_resources:
       dns_refresh_rate: 60s
       lb_policy: round_robin
       upstream_connection_options:
-        # configure a TCP keep-alive to detect and reconnect to the admin
-        # server in the event of a TCP socket half open connection
         tcp_keepalive: {}
       load_assignment:
         cluster_name: web
@@ -24,13 +22,11 @@ static_resources:
                       address: web
                       port_value: 9292
     - name: keycloak
-      connect_timeout: 1.0s
+      connect_timeout: 2.0s
       type: logical_dns
       dns_refresh_rate: 60s
       lb_policy: round_robin
       upstream_connection_options:
-        # configure a TCP keep-alive to detect and reconnect to the admin
-        # server in the event of a TCP socket half open connection
         tcp_keepalive: {}
       load_assignment:
         cluster_name: keycloak
@@ -40,15 +36,18 @@ static_resources:
                   address:
                     socket_address:
                       address: keycloak
-                      port_value: 80
+                      port_value: 8080
+      #transport_socket:
+      #  name: envoy.transport_sockets.tls
+      #  typed_config:
+      #    "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+      #    sni: keycloak
     - name: outbound|443||su1.3scale.net
       connect_timeout: 2.0s
       type: logical_dns
       dns_refresh_rate: 60s
       lb_policy: round_robin
       upstream_connection_options:
-        # configure a TCP keep-alive to detect and reconnect to the admin
-        # server in the event of a TCP socket half open connection
         tcp_keepalive: {}
       load_assignment:
         cluster_name: outbound|443||su1.3scale.net
@@ -70,8 +69,6 @@ static_resources:
       dns_refresh_rate: 60s
       lb_policy: round_robin
       upstream_connection_options:
-        # configure a TCP keep-alive to detect and reconnect to the admin
-        # server in the event of a TCP socket half open connection
         tcp_keepalive: {}
       load_assignment:
         cluster_name: outbound|443||multitenant.3scale.net
