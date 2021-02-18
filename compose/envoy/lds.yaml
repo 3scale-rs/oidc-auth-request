@@ -66,7 +66,7 @@ resources:
                                 },
                                 "urls": {
                                   "login": "http://0.0.0.0:18080/auth/realms/master/protocol/openid-connect/auth",
-                                  "token": "http://0.0.0.0:18080/auth/realms/master/protocol/openid-connect/token"
+                                  "token": "http://keycloak/auth/realms/master/protocol/openid-connect/token"
                                 },
                                 "clients": [
                                   {
