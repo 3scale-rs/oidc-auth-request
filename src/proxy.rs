@@ -121,7 +121,11 @@ impl HttpContext for OIDCAuthRequest {
             .flatten();
         if let Some(token) = oidc_token {
             info!("cookie with token found, setting authorization");
-            let value = format!("Bearer {}", token);
+            let token_type = headers
+                .get_cookie_from_header("cookie", "token_type")
+                .flatten()
+                .unwrap_or("Bearer");
+            let value = format!("{} {}", token_type, token);
             self.set_http_request_header("authorization", Some(value.as_str()));
             return FilterHeadersStatus::Continue;
         }
@@ -222,6 +226,11 @@ impl Context for OIDCAuthRequest {
             if let Some(token) = json.get("id_token") {
                 info!("token found, setting cookie");
                 let url = self.url.as_ref().unwrap();
+                let expiry = json
+                    .get("expires_in")
+                    .map(|v| v.as_u64())
+                    .flatten()
+                    .unwrap_or(60);
                 // FIXME rather than redirect, maybe resume_http_request with the right cookie?
                 self.send_http_response(
                     302,
@@ -229,9 +238,14 @@ impl Context for OIDCAuthRequest {
                         (
                             "set-cookie",
                             format!(
-                                "oidcToken={};Max-Age={}",
+                                "oidc_token={};Max-Age={};token_type={};Max-Age={}",
                                 token,
-                                json.get("expires_in").unwrap()
+                                expiry,
+                                json.get("token_type")
+                                    .map(|v| v.as_str())
+                                    .flatten()
+                                    .unwrap_or("Bearer"),
+                                expiry,
                             )
                             .as_str(),
                         ),
